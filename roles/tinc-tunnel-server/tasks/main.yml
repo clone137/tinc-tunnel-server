@@ -1,0 +1,66 @@
+---
+
+- name: reload ansible_local
+  setup:
+    filter: ansible_local
+
+- debug: msg="{{ vpn_ip }}"
+
+- name: install tinc
+  pkgng: name=tinc state=present
+
+- name: ensure tinc vpn name directory exists
+  file: dest="/usr/local/etc/tinc/{{ vpn_name }}/hosts" recurse=True state=directory
+
+- name: create server tinc.conf
+  template: src=tinc.server.conf.j2 dest="/usr/local/etc/tinc/{{ vpn_name }}/tinc.conf"
+  when: "'servers' in group_names"
+
+- name: create client tinc.conf
+  template: src=tinc.client.conf.j2 dest="/usr/local/etc/tinc/{{ vpn_name }}/tinc.conf"
+  when: "'clients' in group_names"
+
+- name: ensure tinc address is properly set in the tinc host file
+  lineinfile: dest=/usr/local/etc/tinc/{{ vpn_name }}/hosts/{{ ansible_hostname }} line="Address = {{ ansible_default_ipv4.address }}" create=yes
+
+- name: ensure subnet ip address is properly set in the tinc host file
+  lineinfile: dest=/usr/local/etc/tinc/{{ vpn_name }}/hosts/{{ ansible_hostname }} line="Subnet = {{ vpn_ip }}/32" create=yes
+
+- name: create tinc private key
+  shell: tincd --config=/usr/local/etc/tinc/{{ vpn_name }} -n {{ vpn_name }} -K4096
+  args:
+    creates: /usr/local/etc/tinc/{{ vpn_name }}/rsa_key.priv
+
+- name: create tinc-up file
+  template: src=tinc-up.j2 dest=/usr/local/etc/tinc/{{ vpn_name }}/tinc-up mode=0755
+
+- name: create tinc-down file
+  template: src=tinc-down.j2 dest=/usr/local/etc/tinc/{{ vpn_name }}/tinc-down mode=0755
+
+- name: fetch tinc hosts file after private key creation
+  fetch: src=/usr/local/etc/tinc/{{ vpn_name }}/hosts/{{ ansible_hostname }} dest=fetch/{{ ansible_hostname }} flat=yes
+
+- name: copy the fetched tinc client host files to each server
+  copy: src=fetch/{{ item }} dest=/usr/local/etc/tinc/{{ vpn_name }}/hosts/
+  with_inventory_hostnames: clients
+  when: "'servers' in group_names"
+
+- name: copy the fetched tinc server host files to each client
+  copy: src=fetch/{{ item }} dest=/usr/local/etc/tinc/{{ vpn_name }}/hosts/
+  with_inventory_hostnames: servers
+  when: "'clients' in group_names"
+
+- name: ensure tincd has been set to start in rc.conf
+  blockinfile:
+    dest: /etc/rc.conf
+    block: |
+      tincd_enable="YES"
+      tincd_cfg="{{ vpn_name }}"
+  notify:
+    - reload tincd
+
+# finally ensure tinc is actually running
+- name: ensure tincd is running
+  service:
+    name: tincd
+    state: started

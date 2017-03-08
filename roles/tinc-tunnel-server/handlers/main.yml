@@ -1,0 +1,21 @@
+---
+
+- name: start tincd
+  service: >
+    name=tincd
+    state=started
+
+- name: restart tincd
+  service: >
+    name=tincd
+    state=restarted
+
+- name: reload tincd
+  service: >
+    name=tincd
+    state=reloaded
+
+- name: stop tincd
+  service: >
+    name=tincd
+    state=stopped
