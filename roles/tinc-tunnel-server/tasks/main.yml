@@ -59,7 +59,6 @@
   notify:
     - reload tincd
 
-# finally ensure tinc is actually running
 - name: ensure tincd is running
   service:
     name: tincd
